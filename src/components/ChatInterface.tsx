@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, LifeBuoy, Heart, Sparkles } from 'lucide-react';
 import { ChatMessage } from '@/components/ChatMessage';
 import { CopingTechniques } from '@/components/CopingTechniques';
-import { getAIResponse } from '@/lib/aiResponses';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Message {
   id: string;
@@ -62,25 +62,50 @@ export const ChatInterface = ({ onCrisisSupport }: ChatInterfaceProps) => {
     setInputValue('');
     setIsTyping(true);
 
-    // Simulate AI thinking time
-    setTimeout(async () => {
-      const aiResponse = await getAIResponse(text.trim(), messages);
+    try {
+      // Call Supabase edge function for AI response
+      const { data, error } = await supabase.functions.invoke('chat-ai', {
+        body: {
+          message: text.trim(),
+          conversationHistory: messages
+        }
+      });
+
+      if (error) {
+        console.error('Error calling AI function:', error);
+        throw error;
+      }
+
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: aiResponse.text,
+        text: data.text,
         isUser: false,
         timestamp: new Date(),
-        suggestedActions: aiResponse.suggestedActions
+        suggestedActions: data.suggestedActions
       };
 
       setMessages(prev => [...prev, aiMessage]);
       setIsTyping(false);
 
       // Check for crisis keywords and show support if needed
-      if (aiResponse.requiresCrisisSupport) {
+      if (data.requiresCrisisSupport) {
         setTimeout(() => onCrisisSupport(), 2000);
       }
-    }, 1000 + Math.random() * 1500);
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      
+      // Fallback response
+      const fallbackMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "I'm sorry, I'm having trouble responding right now. Please know that I'm here to listen and support you. If you're in crisis, please reach out to crisis support immediately.",
+        isUser: false,
+        timestamp: new Date(),
+        suggestedActions: ["Try again", "Crisis support", "Coping strategies"]
+      };
+      
+      setMessages(prev => [...prev, fallbackMessage]);
+      setIsTyping(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
